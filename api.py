@@ -21,16 +21,20 @@ def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
 
 
-def _heavy_work(job: Job, n: int):
+def create_stream(n):
+    print("Doing some heavy work that might fail...")
+    sleep(n)
+    if random() < .3:
+        raise RuntimeError("Oops...")
+    print("Done")
+    return f"Heavy work done for {n} seconds"
+
+
+def _heavy_work(job: Job, func, *args):
     engine = create_engine(DATABASE_URI, echo=True)
     try:
-        print("Doing some heavy work that might fail...")
-        sleep(n)
-        if random() < .3:
-            raise RuntimeError("Oops...")
-        print("Done")
         # Write return value to database
-        return_value = f"Heavy work done for {n} seconds"
+        return_value = func(*args)
         job.status = "succeeded"
     except Exception:
         # Log exception to database
@@ -51,7 +55,8 @@ def create_job(background_tasks: BackgroundTasks, job_request: JobRequest):
         session.add(job)
         session.commit()
         session.refresh(job)
-    background_tasks.add_task(_heavy_work, job, job_request.delay)
+    background_tasks.add_task(
+        _heavy_work, job, create_stream, job_request.delay)
     return {
         "job_id": job.id
     }

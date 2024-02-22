@@ -1,4 +1,5 @@
 fastapi==0.109.0
+psycopg2-binary==2.9.9
 pydantic==2.6.1
 sqlmodel==0.0.16
 uvicorn==0.26.0
