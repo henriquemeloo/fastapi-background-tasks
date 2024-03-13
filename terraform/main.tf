@@ -1,24 +1,3 @@
-# module "vpc" {
-#   source = "terraform-aws-modules/vpc/aws"
-
-#   name = "fastapi-background-tasks-test"
-#   cidr = "10.0.0.0/16"
-
-#   azs             = ["us-east-1a"]
-#   private_subnets = ["10.0.1.0/24"]
-
-#   tags = {
-#     Environment = "dev"
-#   }
-# }
-
-# resource "aws_vpc_endpoint" "apigw" {
-#   vpc_id            = module.vpc.vpc_id
-#   service_name      = "com.amazonaws.${var.aws_region}.execute-api"
-#   vpc_endpoint_type = "Interface"
-#   subnet_ids        = module.vpc.private_subnets
-# }
-
 data "aws_caller_identity" "this" {}
 
 
@@ -60,18 +39,10 @@ resource "aws_iam_role" "lambda" {
     "arn:aws:iam::aws:policy/AWSLambdaExecute",
     "arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess",
     "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
-    "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
-    # "arn:aws:iam::${data.aws_caller_identity.this.account_id}:policy/${aws_iam_policy.lambda.name}"
+    "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
   ]
 }
 
-# resource "aws_iam_policy" "lambda" {
-#   name = "${var.function_name}-policy"
-#   policy = jsonencode({
-#     Version   = "2012-10-17"
-#     Statement = var.policy_statements
-#   })
-# }
 
 data "aws_lambda_function" "lambda" {
   function_name = aws_lambda_function.lambda.function_name
@@ -88,26 +59,12 @@ resource "aws_lambda_function" "lambda" {
   reserved_concurrent_executions = var.concurrency
   package_type                   = var.container == true ? "Image" : "Zip"
 
-  s3_bucket = var.container == false ? "uncover-${var.environment}-foundation-${var.aws_region}-artifacts" : null
-  s3_key    = var.container == false ? "lambda/templates/lambda_code.zip" : null
-  layers    = length(aws_lambda_layer_version.lambda_layer) >= 1 ? aws_lambda_layer_version.lambda_layer[*].arn : null
-
   # Container Image
-  image_uri = var.container == true ? "${data.aws_caller_identity.this.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/uncover-${var.environment}-foundation-${var.aws_region}-template:latest" : null
+  image_uri = "${module.ecr.repository_url}:latest"
 
   environment {
     variables = merge(local.raw_env, local.secrets_target)
   }
-
-
-  lifecycle {
-    ignore_changes = [image_uri, s3_bucket, s3_key, layers, environment, memory_size, timeout]
-  }
-
-  # vpc_config {
-  #   subnet_ids         = module.vpc.private_subnets
-  #   security_group_ids = [module.vpc.default_security_group_id]
-  # }
 
   tags = {
     env       = var.environment
@@ -138,21 +95,9 @@ resource "aws_lambda_alias" "live" {
   }
 }
 
-resource "aws_lambda_layer_version" "lambda_layer" {
-  layer_name = "${var.function_name}-layer"
-
-  count = var.container == false ? 1 : 0
-
-  compatible_runtimes = ["${var.runtime}"]
-  s3_bucket           = "uncover-${var.environment}-foundation-${var.aws_region}-artifacts"
-  s3_key              = "lambda/templates/lambda_layer.zip"
-  skip_destroy        = false
-}
 
 module "ecr" {
   source = "terraform-aws-modules/ecr/aws"
-
-  count = var.container == true ? 1 : 0
 
   repository_name                 = var.function_name
   repository_force_delete         = true
@@ -194,10 +139,6 @@ module "api_gateway" {
   lambda_function_name       = aws_lambda_function.lambda.function_name
   lambda_function_invoke_arn = aws_lambda_alias.live.invoke_arn
   subdomain_name             = var.subdomain_name
-  # vpc_id                     = module.vpc.vpc_id
-  stage_name = var.stage_name
-  api_key    = var.api_key
-
-  # depends_on = [aws_vpc_endpoint.apigw]
+  stage_name                 = var.stage_name
+  api_key                    = var.api_key
 }
-
